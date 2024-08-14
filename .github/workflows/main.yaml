@@ -1,0 +1,54 @@
+name: Build and publish PDF
+
+# Currently we run in two situations:
+on:
+  # 1) Whenever someone pushes to a branch
+  push:
+  # 2) Whenever a pull request is opened, reopened or gets new commits.
+  pull_request:
+  # This implies that for every push to a local branch in our repo for which a
+  # pull request is open this runs twice. But it's important to ensure that pull
+  # requests get tested even if their branch comes from a fork.
+
+# Cancel running builds on push on the same branch or pull request
+concurrency:
+  group: "${{ github.workflow }}-${{ github.head_ref || github.ref }}"
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build-on-minimal:
+    # build using full TeX Live images by Island of TeX: https://gitlab.com/islandoftex/images/texlive
+    runs-on: ubuntu-22.04
+    name: "Build and upload PDF artifact using a minimal TeX Live setup"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        # This zauguin/install-texlive action supports updates but not older TeX Live versions
+        # So we use this one for the current release and teatimeguest/setup-texlive-action for the older ones
+      - name: Install TeX Live
+        uses: zauguin/install-texlive@v3
+        with:
+          # The list of packages to install is in a separate file at .github/tl_packages
+          package_file: .github/tl_packages
+      - name: Run latexmk
+        run: "latexmk"
+      - name: Archive .pdf
+        uses: actions/upload-artifact@v4
+        with:
+          name: pdf-output
+          path: "*.pdf"
+          retention-days: 21
+      - name: move pdf
+        run: mkdir -p build && mv *.pdf build/.
+      - uses: crazy-max/ghaction-github-pages@v4
+        # only publish pdf from main branch
+        if: github.ref == 'refs/heads/main'
+        with:
+          target_branch: pdf-output
+          build_dir: build
+          commit_message: Publish PDF Output
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
